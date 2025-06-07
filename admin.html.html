@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - ร้าน Minecraft</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0f172a;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background-color: #1e293b;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    h2 {
+      text-align: center;
+      color: #60a5fa;
+    }
+    input, textarea, button {
+      width: 100%;
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+    }
+    button {
+      background-color: #3b82f6;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #2563eb;
+    }
+    table {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+      background: #0f172a;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #334155;
+      text-align: left;
+    }
+    th {
+      background: #1e40af;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Admin Panel</h2>
+
+    <h3>เพิ่มสินค้าใหม่</h3>
+    <input type="text" id="productName" placeholder="ชื่อสินค้า">
+    <input type="number" id="productPrice" placeholder="ราคา">
+    <textarea id="productDesc" placeholder="รายละเอียดสินค้า"></textarea>
+    <button onclick="addProduct()">เพิ่มสินค้า</button>
+
+    <h3>คำสั่งซื้อที่รออนุมัติ</h3>
+    <table id="ordersTable">
+      <thead>
+        <tr>
+          <th>ชื่อผู้ใช้</th>
+          <th>สินค้า</th>
+          <th>ราคา</th>
+          <th>วันที่</th>
+          <th>สถานะ</th>
+          <th>จัดการ</th>
+        </tr>
+      </thead>
+      <tbody id="orderList"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const orderList = document.getElementById('orderList');
+    const orders = JSON.parse(localStorage.getItem('mcshop_orders') || '[]');
+
+    function renderOrders() {
+      orderList.innerHTML = '';
+      orders.forEach((o, i) => {
+        orderList.innerHTML += `
+          <tr>
+            <td>${o.user}</td>
+            <td>${o.product}</td>
+            <td>${o.price}</td>
+            <td>${o.date}</td>
+            <td>${o.status}</td>
+            <td>
+              <button onclick="approveOrder(${i})">✅</button>
+              <button onclick="deleteOrder(${i})">🗑</button>
+            </td>
+          </tr>`;
+      });
+    }
+
+    function approveOrder(index) {
+      orders[index].status = 'อนุมัติแล้ว';
+      localStorage.setItem('mcshop_orders', JSON.stringify(orders));
+      renderOrders();
+    }
+
+    function deleteOrder(index) {
+      orders.splice(index, 1);
+      localStorage.setItem('mcshop_orders', JSON.stringify(orders));
+      renderOrders();
+    }
+
+    function addProduct() {
+      const name = document.getElementById('productName').value;
+      const price = document.getElementById('productPrice').value;
+      const desc = document.getElementById('productDesc').value;
+      if (!name || !price) return alert("กรุณากรอกข้อมูลสินค้าให้ครบ");
+      const products = JSON.parse(localStorage.getItem('mcshop_products') || '[]');
+      products.push({ name, price, desc });
+      localStorage.setItem('mcshop_products', JSON.stringify(products));
+      alert('เพิ่มสินค้าเรียบร้อย');
+    }
+
+    renderOrders();
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ร้าน Minecraft - Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
+</head>
+<body>
+  <h1>Admin Panel</h1>
+
+  <div id="admin-login">
+    <input type="text" id="admin-username" placeholder="ชื่อผู้ใช้แอดมิน" />
+    <input type="password" id="admin-password" placeholder="รหัสผ่านแอดมิน" />
+    <button onclick="adminLogin()">เข้าสู่ระบบ</button>
+  </div>
+
+  <div id="admin-panel" style="display:none;">
+    <button onclick="logoutAdmin()">ออกจากระบบ</button>
+    <h2>จัดการสินค้า</h2>
+    <div>
+      <input type="text" id="product-name" placeholder="ชื่อสินค้า" />
+      <input type="number" id="product-price" placeholder="ราคา" />
+      <textarea id="product-desc" placeholder="รายละเอียด"></textarea>
+      <button onclick="addProduct()">เพิ่มสินค้า</button>
+    </div>
+    <h2>รายการสั่งซื้อ</h2>
+    <div id="order-list"></div>
+  </div>
+
+  <script>
+    const supabaseUrl = 'https://nwnvytmfybggowcrhshr.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53bnZ5dG1meWJnZ293Y3Joc2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3

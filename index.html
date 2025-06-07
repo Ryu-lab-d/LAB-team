@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<title>ร้าน Minecraft - ลูกค้า</title>
+<style>
+  body { font-family: Arial; background: #0f172a; color: #eee; padding: 20px; max-width: 600px; margin: auto; }
+  input, button { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; border: none; }
+  button { background: #3b82f6; color: #fff; font-weight: bold; cursor: pointer; }
+  .hidden { display: none; }
+  .product { background: #334155; margin: 10px 0; padding: 10px; border-radius: 8px; }
+  .error { color: #f87171; }
+  .success { color: #34d399; }
+</style>
+</head>
+<body>
+
+<h2 id="welcome"></h2>
+
+<div id="auth-section">
+  <h3>สมัครสมาชิก</h3>
+  <input id="reg-username" placeholder="ชื่อผู้ใช้" />
+  <input id="reg-password" type="password" placeholder="รหัสผ่าน" />
+  <button onclick="register()">สมัครสมาชิก</button>
+  <p id="reg-msg"></p>
+
+  <hr>
+
+  <h3>เข้าสู่ระบบ</h3>
+  <input id="login-username" placeholder="ชื่อผู้ใช้" />
+  <input id="login-password" type="password" placeholder="รหัสผ่าน" />
+  <button onclick="login()">เข้าสู่ระบบ</button>
+  <p id="login-msg"></p>
+</div>
+
+<div id="products-section" class="hidden">
+  <h3>สินค้า</h3>
+  <div id="products-list"></div>
+  <button onclick="logout()">ออกจากระบบ</button>
+</div>
+
+<div id="payment-section" class="hidden">
+  <h3>ชำระเงิน: <span id="selected-product-name"></span></h3>
+  <p>โอนผ่าน TrueMoney Wallet เบอร์: <strong>080-080-1181</strong></p>
+  <input type="file" id="slip-file" accept="image/*" />
+  <button onclick="uploadSlip()">ส่งสลิปและยืนยันคำสั่งซื้อ</button>
+  <p id="payment-msg"></p>
+  <button onclick="cancelPayment()">ยกเลิก</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
+<script>
+  const SUPABASE_URL = 'https://nwnvytmfybggowcrhshr.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53bnZ5dG1meWJnZ293Y3Joc2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkyNzE1OTYsImV4cCI6MjA2NDg0NzU5Nn0.ukCDxE7NV0nSmC0xGq1R543AA6GKbE7BVZGscpN8jjE';
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let currentUser = null;
+  let selectedProduct = null;
+
+  async function register() {
+    const username = document.getElementById('reg-username').value.trim();
+    const password = document.getElementById('reg-password').value.trim();
+    const msg = document.getElementById('reg-msg');
+    msg.textContent = '';
+    if (!username || !password) {
+      msg.textContent = 'กรุณากรอกข้อมูลให้ครบ';
+      msg.className = 'error';
+      return;
+    }
+    // เช็ค username ซ้ำ
+    const { data: existingUser } = await supabase.from('users').select().eq('username', username).single();
+    if (existingUser) {
+      msg.textContent = 'ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว';
+      msg.className = 'error';
+      return;
+    }
+    // เพิ่ม user
+    const { error } = await supabase.from('users').insert([{ username, password, is_admin: false }]);
+    if (error) {
+      msg.textContent = 'สมัครสมาชิกไม่สำเร็จ: ' + error.message;
+      msg.className = 'error';
+      return;
+    }
+    msg.textContent = 'สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ';
+    msg.className = 'success';
+  }
+
+  async function login() {
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value.trim();
+    const msg = document.getElementById('login-msg');
+    msg.textContent = '';
+    if (!username || !password) {
+      msg.textContent = 'กรุณากรอกข้อมูลให้ครบ';
+      msg.className = 'error';
+      return;
+    }
+    const { data: user, error } = await supabase.from('users').select().eq('username', username).eq('password', password).single();
+    if (error || !user) {
+      msg.textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+      msg.className = 'error';
+      return;
+    }
+    currentUser = user;
+    document.getElementById('welcome').textContent = `ยินดีต้อนรับ ${currentUser.username}`;
+    document.getElementById('auth-section').classList.add('hidden');
+    document.getElementById('products-section').classList.remove('hidden');
+    loadProducts();
+  }
+
+  async function logout() {
+    currentUser = null;
+    selectedProduct = null;
+    document.getElementById('welcome').textContent = '';
+    document.getElementById('auth-section').classList.remove('hidden');
+    document.getElementById('products-section').classList.add('hidden');
+    document.getElementById('payment-section').classList.add('hidden');
+    document.getElementById('reg-msg').textContent = '';
+    document.getElementById('login-msg').textContent = '';
+  }
+
+  async function loadProducts() {
+    const { data: products, error } = await supabase.from('products').select();
+    if (error) {
+      alert('โหลดสินค้าไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    const list = document.getElementById('products-list');
+    list.innerHTML = '';
+    products.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'product';
+      div.innerHTML = `<b>${p.name}</b><br>ราคา: ${p.price} บาท<br><button onclick="chooseProduct(${p.id}, '${p.name}')">สั่งซื้อ</button>`;
+      list.appendChild(div);
+    });
+  }
+
+  function chooseProduct(id, name) {
+    selectedProduct = { id, name };
+    document.getElementById('selected-product-name').textContent = name;
+    document.getElementById('products-section').classList.add('hidden');
+    document.getElementById('payment-section').classList.remove('hidden');
+    document.getElementById('payment-msg').textContent = '';
+  }
+
+  function cancelPayment() {
+    selectedProduct = null;
+    document.getElementById('payment-section').classList.add('hidden');
+    document.getElementById('products-section').classList.remove('hidden');
+  }
+
+  async function uploadSlip() {
+    const fileInput = document.getElementById('slip-file');
+    const msg = document.getElementById('payment-msg');
+    msg.textContent = '';
+    if (!fileInput.files.length) {
+      msg.textContent = 'กรุณาเลือกไฟล์สลิปก่อน';
+      msg.className = 'error';
+      return;
+    }
+    if (!selectedProduct) {
+      msg.textContent = 'ไม่มีสินค้าเลือก';
+      msg.className = 'error';
+      return;
+    }
+
+    const file = fileInput.files[0];
+    const fileExt = file.name.split('.').pop();
+    const fileName = `slips/${currentUser.username}_${Date.now()}.${fileExt}`;
+
+    // อัปโหลดไฟล์สลิปไป Supabase Storage
+    const { data, error: uploadError } = await supabase.storage.from('payment
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ร้าน Minecraft - ลูกค้า</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
+</head>
+<body>
+  <h1>ร้าน Minecraft</h1>
+  
+  <div id="auth-section">
+    <h2>สมัครสมาชิก / เข้าสู่ระบบ</h2>
+    <input type="text" id="username" placeholder="ชื่อผู้ใช้" />
+    <input type="password" id="password" placeholder="รหัสผ่าน" />
+    <button onclick="register()">สมัครสมาชิก</button>
+    <button onclick="login()">เข้าสู่ระบบ</button>
+  </div>
+
+  <div id="product-section" style="display:none;">
+    <h2>สินค้า</h2>
+    <div id="product-list"></div>
+    <button onclick="logout()">ออกจากระบบ</button>
+  </div>
+
+  <div id="order-section" style="display:none;">
+    <h2>ชำระเงิน</h2>
+    <input type="file" id="slip-file" />
+    <button onclick="uploadSlip()">ส่งสลิป</button>
+  </div>
+
+  <script>
+    // เชื่อมต่อ Supabase
+    const supabaseUrl = 'https://nwnvytmfybggowcrhshr.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53bnZ5dG1meWJnZ293Y3Joc2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkyNzE1OTYsImV4cCI6MjA2NDg0NzU5Nn0.ukCDxE7NV0nSmC0xGq1R543AA6GKbE7BVZGscpN8jjE';
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    let currentUser = null;
+    let selectedProductId = null;
+
+    async function register() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
+      if (!username || !password) return alert('กรุณากรอกข้อมูลให้ครบ');
+
+      // ตรวจสอบว่ามี user ซ้ำหรือยัง
+      let { data: existingUser } = await supabase
+        .from('users')
+        .select()
+        .eq('username', username)
+        .single();
+
+      if (existingUser) return alert('ชื่อผู้ใช้นี้ถูกใช้งานแล้ว');
+
+      // เพิ่ม user ลงตาราง users
+      const { error } = await supabase
+        .from('users')
+        .insert([{ username, password, is_admin: false }]);
+      if (error) return alert('สมัครสมาชิกไม่สำเร็จ: ' + error.message);
+
+      alert('สมัครสมาชิกสำเร็จ กรุณาเข้าสู่ระบบ');
+    }
+
+    async function login() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
+      if (!username || !password) return alert('กรุณากรอกข้อมูลให้ครบ');
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .select()
+        .eq('username', username)
+        .eq('password', password)
+        .single();
+
+      if (error || !user) return alert('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+
+      currentUser = user;
+      alert('เข้าสู่ระบบสำเร็จ!');
+
+      document.getElementById('auth-section').style.display = 'none';
+      document.getElementById('product-section').style.display = 'block';
+
+      loadProducts();
+    }
+
+    async function loadProducts() {
+      const { data: products, error } = await supabase.from('products').select();
+      if (error) return alert('โหลดสินค้าผิดพลาด: ' + error.message);
+
+      const list = document.getElementById('product-list');
+      list.innerHTML = '';
+      products.forEach(product => {
+        const div = document.createElement('div');
+        div.innerHTML = `
+          <h3>${product.name}</h3>
+          <p>ราคา: ${product.price} บาท</p>
+          <button onclick="orderProduct(${product.id})">สั่งซื้อ</button>
+          <hr>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function orderProduct(productId) {
+      selectedProductId = productId;
+      document.getElementById('order-section').style.display = 'block';
+    }
+
+    async function uploadSlip() {
+      const fileInput = document.getElementById('slip-file');
+      if (!fileInput.files.length) return alert('กรุณาแนบสลิป');
+
+      const file = fileInput.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+
+      // อัปโหลดไฟล์ขึ้น Storage
+      let { error: uploadError } = await supabase.storage
+        .from('payment-slips')
+        .upload(fileName, file);
+
+      if (uploadError) return alert('อัปโหลดสลิปล้มเหลว: ' + uploadError.message);
+
+      // สร้าง public URL หรือ private URL (ขึ้นกับ Bucket Policy)
+      const { data } = supabase.storage.from('payment-slips').getPublicUrl(fileName);
+      const slipUrl = data.publicUrl;
+
+      // บันทึกคำสั่งซื้อ
+      const { error } = await supabase.from('orders').insert([{
+        user_id: currentUser.id,
+        product_id: selectedProductId,
+        status: 'pending',
+        slip_url: slipUrl,
+        order_date: new Date().toISOString()
+      }]);
+
+      if (error) return alert('บันทึกคำสั่งซื้อไม่สำเร็จ: ' + error.message);
+
+      alert('ส่งสลิปสำเร็จ รอแอดมินตรวจสอบ');
+      document.getElementById('order-section').style.display = 'none';
+    }
+
+    function logout() {
+      currentUser = null;
+      selectedProductId = null;
+      document.getElementById('auth-section').style.display = 'block';
+      document.getElementById('product-section').style.display = 'none';
+      document.getElementById('order-section').style.display = 'none';
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+    }
+  </script>
+</body>
+</html>
